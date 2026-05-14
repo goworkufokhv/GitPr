@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>당첨 결과 확인</title>
+    <style>
+      table {
+        border-collapse: collapse;
+        width: 80%;
+        margin: 20px auto;
+      }
+      th,
+      td {
+        border: 1px solid #ccc;
+        padding: 8px;
+        text-align: center;
+      }
+      th {
+        background-color: #f2f2f2;
+      }
+      .winner {
+        color: green;
+        font-weight: bold;
+      }
+      .loser {
+        color: red;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>내 로또 결과</h2>
+
+    {% if results %}
+    <table>
+      <thead>
+        <tr>
+          <th>티켓 번호</th>
+          <th>맞춘 개수</th>
+          <th>등수</th>
+          <th>당첨 여부</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for result in results %}
+        <tr>
+          <td>{{ result.ticket.numbers }}</td>
+          <td>
+            {% if result.rank %} {% if result.rank == 1 %} 6 {% elif result.rank
+            == 2 %} 5 {% elif result.rank == 3 %} 4 {% endif %} {% else %} 0~3
+            {% endif %}
+          </td>
+          <td>
+            {% if result.rank %} {{ result.rank }}등 {% else %} - {% endif %}
+          </td>
+          <td>
+            {% if result.is_winner %}
+            <span class="winner">당첨!</span>
+            {% else %}
+            <span class="loser">꽝</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>아직 추첨 결과가 없습니다.</p>
+    {% endif %}
+  </body>
+</html>

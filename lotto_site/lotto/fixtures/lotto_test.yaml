@@ -1,0 +1,68 @@
+- model: auth.user
+  pk: 1
+  fields:
+    username: alice
+    password: pbkdf2_sha256$260000$test$hashedpassword1
+    is_superuser: false
+    is_staff: false
+    is_active: true
+
+- model: auth.user
+  pk: 2
+  fields:
+    username: bob
+    password: pbkdf2_sha256$260000$test$hashedpassword2
+    is_superuser: false
+    is_staff: false
+    is_active: true
+
+- model: lotto.draw
+  pk: 1
+  fields:
+    numbers: '3,12,19,25,33,41'
+    draw_date: '2026-05-11T17:00:00'
+
+- model: lotto.ticket
+  pk: 1
+  fields:
+    user: 1
+    numbers: '3,12,19,25,33,41'
+    purchased_at: '2026-05-11T17:05:00'
+
+- model: lotto.ticket
+  pk: 2
+  fields:
+    user: 1
+    numbers: '1,5,12,19,25,33'
+    purchased_at: '2026-05-11T17:06:00'
+
+- model: lotto.ticket
+  pk: 3
+  fields:
+    user: 2
+    numbers: '7,8,9,10,11,12'
+    purchased_at: '2026-05-11T17:07:00'
+
+- model: lotto.result
+  pk: 1
+  fields:
+    ticket: 1
+    draw: 1
+    rank: 1
+    is_winner: true
+
+- model: lotto.result
+  pk: 2
+  fields:
+    ticket: 2
+    draw: 1
+    rank: 2
+    is_winner: true
+
+- model: lotto.result
+  pk: 3
+  fields:
+    ticket: 3
+    draw: 1
+    rank: null
+    is_winner: false

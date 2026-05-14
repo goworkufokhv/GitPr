@@ -1,0 +1,8 @@
+<h2>로또 구매</h2>
+<form method="post">
+  {% csrf_token %}
+  <label>번호 입력 (쉼표로 구분):</label>
+  <input type="text" name="numbers" placeholder="1,2,3,4,5,6" />
+  <button type="submit" name="mode" value="manual">수동 구매</button>
+  <button type="submit" name="mode" value="auto">자동 구매</button>
+</form>

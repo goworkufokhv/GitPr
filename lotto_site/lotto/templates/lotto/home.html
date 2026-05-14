@@ -1,0 +1,29 @@
+<h2>로또 서비스</h2>
+<p>원하는 작업을 선택하세요:</p>
+
+<a href="{% url 'lotto:buy_ticket' %}">
+  <button>구매 하기</button>
+</a>
+
+<a href="{% url 'lotto:check_results' %}">
+  <button>결과 확인</button>
+</a>
+
+<a href="{% url 'lotto:my_tickets' %}">
+  <button>내 티켓 보기</button>
+</a>
+
+<hr />
+
+{% if user.is_authenticated %}
+<p>안녕하세요, {{ user.username }}님!</p>
+<!-- 로그아웃 버튼 -->
+<form action="{% url 'logout' %}" method="post" style="display: inline">
+  {% csrf_token %}
+  <button type="submit">로그아웃</button>
+</form>
+{% else %}
+<p>아직 로그인하지 않으셨습니다.</p>
+<a href="{% url 'login' %}"><button>로그인</button></a>
+<a href="{% url 'lotto:signup' %}"><button>회원가입</button></a>
+{% endif %}

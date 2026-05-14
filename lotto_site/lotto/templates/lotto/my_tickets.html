@@ -1,0 +1,6 @@
+<h2>내 티켓</h2>
+<ul>
+  {% for ticket in tickets %}
+  <li>{{ ticket.numbers }} ({{ ticket.purchased_at }})</li>
+  {% endfor %}
+</ul>
