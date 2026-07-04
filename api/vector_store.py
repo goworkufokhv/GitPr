@@ -1,40 +1,93 @@
+from functools import lru_cache
+
 import chromadb
 from sentence_transformers import SentenceTransformer
 
-client=chromadb.PersistentClient(
-    path="chroma_db"
-)
 
-collection=client.get_or_create_collection(
-    name="documents"
-)
+CHROMA_PATH = "chroma_db"
+COLLECTION_NAME = "documents"
+MODEL_NAME = "all-MiniLM-L6-v2"
 
-model=SentenceTransformer(
-    "all-MiniLM-L6-v2"
-)
+@lru_cache(maxsize=1)
+def get_collection():
+    client = chromadb.PersistentClient(path=CHROMA_PATH)
+    return client.get_or_create_collection(name=COLLECTION_NAME)
 
-text = """
-데이터베이스 관리 시스템(DBMS)은
-데이터를 효율적으로 관리하는 소프트웨어이다.
-"""
 
-embedding=model.encode(text)
+@lru_cache(maxsize=1)
+def get_embedding_model():
+    return SentenceTransformer(MODEL_NAME)
 
-collection.add(
-    documents=[text],
-    embeddings=[embedding.tolist()],
-    ids=["doc1"]
-)
 
-query="DBMS가 뭐야?"
+def save_chunks_to_chroma(document_id, file_name, chunks):
+    if not chunks:
+        return 0
 
-query_embedding=model.encode(query)
+    ids = []
+    documents = []
+    metadatas = []
 
-results=collection.query(
-    query_embeddings=[
-        query_embedding.tolist()
-    ],
-    n_results=1
-)
+    for chunk in chunks:
+        text = chunk["text"].strip()
 
-print(results["documents"])
+        if not text:
+            continue
+
+        page_number = chunk["page"]
+        chunk_number = chunk["chunk"]
+
+        ids.append(f"document_{document_id}_page_{page_number}_chunk_{chunk_number}")
+        documents.append(text)
+        metadatas.append({
+            "document_id": document_id,
+            "file_name": file_name,
+            "page": page_number,
+            "chunk": chunk_number
+        })
+
+    if not documents:
+        return 0
+
+    embeddings = get_embedding_model().encode(documents).tolist()
+
+    get_collection().upsert(
+        ids=ids,
+        documents=documents,
+        embeddings=embeddings,
+        metadatas=metadatas
+    )
+
+    return len(documents)
+
+
+def search_chroma(query, n_results=5, document_id=None):
+    if not query or not query.strip():
+        return []
+
+    query_embedding = get_embedding_model().encode(query).tolist()
+    query_options = {
+        "query_embeddings": [query_embedding],
+        "n_results": n_results
+    }
+
+    if document_id is not None:
+        query_options["where"] = {"document_id": document_id}
+
+    results = get_collection().query(**query_options)
+    searched_documents = []
+
+    for text, metadata, distance in zip(
+        results["documents"][0],
+        results["metadatas"][0],
+        results["distances"][0]
+    ):
+        searched_documents.append({
+            "text": text,
+            "document_id": metadata["document_id"],
+            "file_name": metadata["file_name"],
+            "page": metadata["page"],
+            "chunk": metadata["chunk"],
+            "distance": distance
+        })
+
+    return searched_documents

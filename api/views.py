@@ -2,7 +2,8 @@ from django.shortcuts import render #원래 Django에서 HTML 페이지를 보�
 from rest_framework.views import APIView #API 요청을 처리하는 View를 만들기 위한 기본 틀
 from rest_framework.response import Response #Django에서 JSON 응답을 쉽게 만들어주는 도구야.
 from .models import Document
-from .utils import extract_text_from_pdf
+from .utils import extract_text_from_pdf, split_text
+from .vector_store import save_chunks_to_chroma
 
 class TestAPIView(APIView): #API 요청을 처리하는 View다.
     def get(self, request):
@@ -75,6 +76,11 @@ class DocumentUploadAPIView(APIView):
             return Response({
                 "error":"PDF 파일이 필요합니다."
             },status=400)
+
+        if not uploaded_file.name.lower().endswith(".pdf"):
+            return Response({
+                "error": "PDF 파일만 업로드할 수 있습니다."
+            }, status=400)
         
         if not title:
             title=uploaded_file.name
@@ -87,6 +93,23 @@ class DocumentUploadAPIView(APIView):
 
         #방금 저장한 PDF 파일에서 텍스트를 추출하는 코드야.
         pages_text=extract_text_from_pdf(document.file.path)
+
+        chunks = []
+        for page in pages_text:
+            page_chunks = split_text(page["text"])
+
+            for chunk_number, text in enumerate(page_chunks):
+                chunks.append({
+                    "text": text,
+                    "page": page["page"],
+                    "chunk": chunk_number
+                })
+
+        saved_chunk_count = save_chunks_to_chroma(
+            document_id=document.id,
+            file_name=uploaded_file.name,
+            chunks=chunks
+        )
 
         preview_text=""
         if pages_text:
@@ -102,6 +125,7 @@ class DocumentUploadAPIView(APIView):
                 "uploaded_at": document.uploaded_at
             },
             "page_count": len(pages_text),
+            "chunk_count": saved_chunk_count,
             "preview_text": preview_text
         },status=201)
     
