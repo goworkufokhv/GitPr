@@ -41,8 +41,19 @@ INSTALLED_APPS = [
      # 추가
     "rest_framework", #Django REST Framework를 사용하겠다는 의미
     "api", #내가 만든 API 기능용 앱을 Django에 등록
+    "drf_spectacular", #Django REST Framework의 OpenAPI 스펙을 자동으로 생성해주는 라이브러리(맞나?)
 ]
 
+# Django REST Framework 설정
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+# Django REST Framework Spectacular 설정
+SPECTACULAR_SETTINGS = {
+    "TITLE": "StudyMate API",
+    "DESCRIPTION": "StudyMate Backend API",
+    "VERSION": "1.0.0",
+}
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
