@@ -35,6 +35,7 @@ class ChatAPIView(APIView):
                 }
             ]
         })
+from rest_framework.parsers import MultiPartParser, FormParser
     
 class DocumentListAPIView(APIView): #왼쪽 사이드바의 자료 목록을 반환하는 API야.
     parser_classes = [MultiPartParser, FormParser]
@@ -75,7 +76,7 @@ class DocumentListAPIView(APIView): #왼쪽 사이드바의 자료 목록을 반
             "documents":documents
         })
     
-from rest_framework.parsers import MultiPartParser, FormParser
+
     
 class DocumentUploadAPIView(APIView):
     parser_classes = [MultiPartParser, FormParser]
