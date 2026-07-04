@@ -4,6 +4,8 @@ from rest_framework.response import Response #Django에서 JSON 응답을 쉽게
 from .models import Document
 from .utils import extract_text_from_pdf, split_text
 from .vector_store import save_chunks_to_chroma
+from drf_spectacular.utils import extend_schema
+from .serializers import DocumentUploadSerializer
 
 class TestAPIView(APIView): #API 요청을 처리하는 View다.
     def get(self, request):
@@ -35,6 +37,15 @@ class ChatAPIView(APIView):
         })
     
 class DocumentListAPIView(APIView): #왼쪽 사이드바의 자료 목록을 반환하는 API야.
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        request=DocumentUploadSerializer,
+        responses={201: None}
+    )
+    def post(self, request):
+        title = request.data.get("title")
+        uploaded_file = request.FILES.get("file")
     def get(self,request):
         documents=[ #아직 데이터베이스에서 가져온 게 아니라, 코드 안에 직접 적어둔 가짜 자료 목록이야.
             {
