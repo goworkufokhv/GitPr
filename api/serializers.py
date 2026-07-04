@@ -3,5 +3,5 @@
 from rest_framework import serializers
 
 class DocumentUploadSerializer(serializers.Serializer):
-    title = serializers.CharField()
-    file = serializers.FileField()
+    title = serializers.CharField(required=False)
+    file = serializers.FileField(required=True)
