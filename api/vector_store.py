@@ -6,7 +6,7 @@ from sentence_transformers import SentenceTransformer
 
 CHROMA_PATH = "chroma_db"
 COLLECTION_NAME = "documents"
-MODEL_NAME = "all-MiniLM-L6-v2"
+MODEL_NAME = "all-MiniLM-L6-v2" 
 
 @lru_cache(maxsize=1)
 def get_collection():
@@ -60,7 +60,7 @@ def save_chunks_to_chroma(document_id, file_name, chunks):
     return len(documents)
 
 
-def search_chroma(query, n_results=5, document_id=None):
+def search_chroma(query, n_results=8, document_id=None):
     if not query or not query.strip():
         return []
 
@@ -76,18 +76,16 @@ def search_chroma(query, n_results=5, document_id=None):
     results = get_collection().query(**query_options)
     searched_documents = []
 
-    for text, metadata, distance in zip(
+    for text, metadata in zip(
         results["documents"][0],
-        results["metadatas"][0],
-        results["distances"][0]
+        results["metadatas"][0]
     ):
         searched_documents.append({
             "text": text,
-            "document_id": metadata["document_id"],
             "file_name": metadata["file_name"],
             "page": metadata["page"],
             "chunk": metadata["chunk"],
-            "distance": distance
+            "document_id": metadata["document_id"]
         })
 
     return searched_documents

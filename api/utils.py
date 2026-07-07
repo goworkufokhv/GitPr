@@ -16,7 +16,7 @@ def extract_text_from_pdf(file_path):
     return pages_text
 
 
-def split_text(text, chunk_size=500, overlap=100):
+def split_text(text, chunk_size=700, overlap=150):
     if chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0.")
 
