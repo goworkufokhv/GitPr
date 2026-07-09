@@ -4,10 +4,20 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema
 
 from .models import Document
-from .serializers import ChatRequestSerializer, SummaryRequestSerializer
+from .serializers import (
+    ArticleAnalyzeRequestSerializer,
+    ChatRequestSerializer,
+    SummaryRequestSerializer,
+)
+from .article_utils import extract_article_text
 from .utils import extract_text_from_pdf, split_text
 from .vector_store import save_chunks_to_chroma
-from .rag import build_prompt, build_summary_prompt, call_openai
+from .rag import (
+    build_article_summary_prompt,
+    build_prompt,
+    build_summary_prompt,
+    call_openai,
+)
 from .vector_store import save_chunks_to_chroma, search_chroma
 
 
@@ -122,6 +132,39 @@ class SummaryAPIView(APIView):
                 "id": document.id,
                 "title": document.title
             },
+            "summary_type": summary_type,
+            "summary": summary
+        })
+
+
+class ArticleAnalyzeAPIView(APIView):
+    @extend_schema(request=ArticleAnalyzeRequestSerializer, responses={200: None})
+    def post(self, request):
+        serializer = ArticleAnalyzeRequestSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        url = serializer.validated_data["url"]
+        summary_type = serializer.validated_data["summary_type"]
+
+        try:
+            article = extract_article_text(url)
+        except ValueError as exc:
+            return Response({
+                "error": str(exc)
+            }, status=400)
+
+        prompt = build_article_summary_prompt(
+            article["title"],
+            article["text"],
+            summary_type
+        )
+        summary = call_openai(prompt)
+
+        return Response({
+            "url": url,
+            "title": article["title"],
             "summary_type": summary_type,
             "summary": summary
         })

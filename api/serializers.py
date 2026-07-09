@@ -18,3 +18,12 @@ class SummaryRequestSerializer(serializers.Serializer):
         required=False,
         default="short"
     )
+
+
+class ArticleAnalyzeRequestSerializer(serializers.Serializer):
+    url = serializers.URLField(required=True)
+    summary_type = serializers.ChoiceField(
+        choices=["short", "detailed", "keywords"],
+        required=False,
+        default="short"
+    )

@@ -6,6 +6,7 @@ from .views import (
     DocumentUploadAPIView,
     DocumentTextAPIView,
     SummaryAPIView,
+    ArticleAnalyzeAPIView,
 )
 
 urlpatterns = [#접속 경로에 따라 어떤 View로 보낼지 정하는 목록
@@ -15,4 +16,5 @@ urlpatterns = [#접속 경로에 따라 어떤 View로 보낼지 정하는 목�
     path("documents/upload/", DocumentUploadAPIView.as_view()),
     path("documents/<int:document_id>/text/", DocumentTextAPIView.as_view()),
     path("summary/", SummaryAPIView.as_view()),
+    path("articles/analyze/", ArticleAnalyzeAPIView.as_view()),
 ]

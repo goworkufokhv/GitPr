@@ -98,3 +98,30 @@ def build_summary_prompt(document_title, pages_text, summary_type="short"):
 ---------------
 {instruction}
 """
+
+
+def build_article_summary_prompt(article_title, article_text, summary_type="short"):
+    context = article_text[:12000]
+
+    if summary_type == "detailed":
+        instruction = "기사 내용을 자세하게 요약해 주세요."
+    elif summary_type == "keywords":
+        instruction = "기사의 핵심 키워드 10개를 뽑아 주세요."
+    else:
+        instruction = "기사 내용을 3줄로 요약해 주세요."
+
+    return f"""
+다음 기사를 읽고 요청에 맞게 요약해 주세요.
+
+기사 제목
+---------------
+{article_title}
+
+기사 내용
+---------------
+{context}
+
+요청
+---------------
+{instruction}
+"""
