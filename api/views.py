@@ -4,10 +4,10 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema
 
 from .models import Document
-from .serializers import ChatRequestSerializer
+from .serializers import ChatRequestSerializer, SummaryRequestSerializer
 from .utils import extract_text_from_pdf, split_text
 from .vector_store import save_chunks_to_chroma
-from .rag import build_prompt, call_openai
+from .rag import build_prompt, build_summary_prompt, call_openai
 from .vector_store import save_chunks_to_chroma, search_chroma
 
 
@@ -87,6 +87,45 @@ class DocumentListAPIView(APIView):
                 for document in documents
             ]
         })
+
+
+class SummaryAPIView(APIView):
+    @extend_schema(request=SummaryRequestSerializer, responses={200: None})
+    def post(self, request):
+        serializer = SummaryRequestSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        document_id = serializer.validated_data["document_id"]
+        summary_type = serializer.validated_data["summary_type"]
+
+        try:
+            document = Document.objects.get(id=document_id)
+        except Document.DoesNotExist:
+            return Response({
+                "error": "Document not found."
+            }, status=404)
+
+        pages_text = extract_text_from_pdf(document.file.path)
+
+        if not pages_text or not any(page.get("text") for page in pages_text):
+            return Response({
+                "error": "No text found in document."
+            }, status=400)
+
+        prompt = build_summary_prompt(document.title, pages_text, summary_type)
+        summary = call_openai(prompt)
+
+        return Response({
+            "document": {
+                "id": document.id,
+                "title": document.title
+            },
+            "summary_type": summary_type,
+            "summary": summary
+        })
+
 
 class DocumentUploadAPIView(APIView):
     parser_classes = [MultiPartParser, FormParser]

@@ -9,3 +9,12 @@ class DocumentUploadSerializer(serializers.Serializer):
 
 class ChatRequestSerializer(serializers.Serializer):
     question = serializers.CharField(required=True)
+
+
+class SummaryRequestSerializer(serializers.Serializer):
+    document_id = serializers.IntegerField(required=True)
+    summary_type = serializers.ChoiceField(
+        choices=["short", "detailed", "keywords"],
+        required=False,
+        default="short"
+    )

@@ -63,3 +63,38 @@ def call_openai(prompt):
     )
 
     return response.output_text
+
+
+def build_summary_prompt(document_title, pages_text, summary_type="short"):
+    context = ""
+
+    for page in pages_text:
+        context += f"""
+[Page {page["page"]}]
+{page["text"]}
+"""
+
+    context = context[:12000]
+
+    if summary_type == "detailed":
+        instruction = "문서 내용을 자세하게 요약해 주세요."
+    elif summary_type == "keywords":
+        instruction = "문서의 핵심 키워드 10개를 뽑아 주세요."
+    else:
+        instruction = "문서 내용을 3줄로 요약해 주세요."
+
+    return f"""
+다음 문서를 읽고 요청에 맞게 요약해 주세요.
+
+문서 제목
+---------------
+{document_title}
+
+문서 내용
+---------------
+{context}
+
+요청
+---------------
+{instruction}
+"""
