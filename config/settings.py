@@ -39,9 +39,29 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
      # 추가
+    "corsheaders",
     "rest_framework", #Django REST Framework를 사용하겠다는 의미
     "api", #내가 만든 API 기능용 앱을 Django에 등록
-    "drf_spectacular", #Django REST Framework의 OpenAPI 스펙을 자동으로 생성해주는 라이브러리(맞나?)
+    "drf_spectacular", #Django REST Framework의 OpenAPI 스펙을 자동으로 생성해주는 라이브러리
+]
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+# =========================
+# CORS 설정
+# =========================
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
 
 # Django REST Framework 설정
@@ -54,15 +74,7 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "StudyMate Backend API",
     "VERSION": "1.0.0",
 }
-MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-]
+
 
 ROOT_URLCONF = 'config.urls'
 

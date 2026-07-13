@@ -45,41 +45,47 @@ class ChatAPIView(APIView):
                 "error": "Question 값이 필요합니다."
             }, status=400)
 
-        searched_docs = search_chroma(question)
+        try:
+            searched_docs = search_chroma(question)
 
-        if not searched_docs:
+            if not searched_docs:
+                return Response({
+                    "answer": "관련 자료를 찾지 못했습니다.",
+                    "sources": []
+                }, status=200)
+            print("\n" + "=" * 50)
+            print("[DEBUG] ChromaDB 검색 결과")
+            print(f"질문: {question}")
+            print(f"검색된 chunk 수: {len(searched_docs)}")
+
+            for idx, doc in enumerate(searched_docs, start=1):
+                print("-" * 50)
+                print(f"[{idx}] 파일: {doc.get('file_name')}")
+                print(f"페이지: {doc.get('page')}")
+                print(f"chunk: {doc.get('chunk')}")
+                print(f"document_id: {doc.get('document_id')}")
+                print("내용 미리보기:")
+                print(doc.get("text", "")[:500])
+
+            print("=" * 50 + "\n")
+
+            prompt = build_prompt(question, searched_docs)
+            answer = call_openai(prompt)
+
             return Response({
-                "answer": "관련 자료를 찾지 못했습니다.",
-                "sources": []
-            }, status=200)
-        print("\n" + "=" * 50)
-        print("[DEBUG] ChromaDB 검색 결과")
-        print(f"질문: {question}")
-        print(f"검색된 chunk 수: {len(searched_docs)}")
-
-        for idx, doc in enumerate(searched_docs, start=1):
-            print("-" * 50)
-            print(f"[{idx}] 파일: {doc.get('file_name')}")
-            print(f"페이지: {doc.get('page')}")
-            print(f"chunk: {doc.get('chunk')}")
-            print(f"document_id: {doc.get('document_id')}")
-            print("내용 미리보기:")
-            print(doc.get("text", "")[:500])
-
-        print("=" * 50 + "\n")
-
-        prompt = build_prompt(question, searched_docs)
-        answer = call_openai(prompt)
-
-        return Response({
-            "answer": answer,
-            "sources": [{
-                "file_name": doc["file_name"],
-                "page": doc["page"],
-                "chunk": doc["chunk"],
-                "document_id": doc["document_id"]
-            } for doc in searched_docs]
-        })
+                "answer": answer,
+                "sources": [{
+                    "file_name": doc["file_name"],
+                    "page": doc["page"],
+                    "chunk": doc["chunk"],
+                    "document_id": doc["document_id"]
+                } for doc in searched_docs]
+            })
+        except Exception as error:
+            print(repr(error))
+            return Response({
+                "error": str(error)
+            }, status=500)
 
 
 class DocumentListAPIView(APIView):
