@@ -1,3 +1,4 @@
+import json
 import os
 
 from dotenv import load_dotenv
@@ -12,7 +13,7 @@ def build_prompt(question, searched_docs):
 
     for idx, doc in enumerate(searched_docs, start=1):
         context += f"""
-[자료 {idx}]
+[자료{idx}]
 파일: {doc["file_name"]}
 페이지: {doc["page"]}
 청크: {doc["chunk"]}
@@ -35,15 +36,25 @@ def build_prompt(question, searched_docs):
 ---------------
 {question}
 
-답변 형식
----------------
-1. 핵심 답변
-2. 쉬운 설명
-3. 참고한 출처
+반드시 아래 JSON 형식으로만 답변하세요.
+
+{{
+  "answer": "사용자에게 보여줄 답변",
+  "used_sources": [1,2,4]
+}}
+
+규칙
+
+- answer에는 답변만 작성한다.
+- used_sources에는 실제 답변 작성에 사용한 자료 번호만 넣는다.
+- 자료 번호는 Prompt에 있는 [자료1], [자료2]의 번호를 그대로 사용한다.
+- 사용하지 않은 자료 번호는 넣지 않는다.
+- JSON 이외의 다른 문장은 출력하지 않는다.
+- JSON을 ```json 같은 마크다운 코드블록으로 감싸지 않는다.
 """
 
 
-def call_openai(prompt):
+def call_openai(prompt, parse_json=False):
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     client = OpenAI(api_key=api_key)
@@ -62,7 +73,51 @@ def call_openai(prompt):
         input=prompt
     )
 
-    return response.output_text
+    if not parse_json:
+        return response.output_text
+
+    try:
+        json_text = response.output_text.strip()
+
+        if json_text.startswith("```json"):
+            json_text = json_text[len("```json"):]
+        elif json_text.startswith("```"):
+            json_text = json_text[len("```"):]
+
+        if json_text.rstrip().endswith("```"):
+            json_text = json_text.rstrip()[:-3]
+
+        result = json.loads(json_text.strip())
+        answer = result["answer"]
+        used_sources = result["used_sources"]
+
+        if not isinstance(answer, str) or not isinstance(used_sources, list):
+            raise ValueError("Invalid GPT response format")
+
+        normalized_sources = []
+        seen_sources = set()
+
+        for source_number in used_sources:
+            try:
+                source_number = int(source_number)
+            except (TypeError, ValueError):
+                continue
+
+            if source_number in seen_sources:
+                continue
+
+            seen_sources.add(source_number)
+            normalized_sources.append(source_number)
+
+        return {
+            "answer": answer,
+            "used_sources": normalized_sources,
+        }
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return {
+            "answer": response.output_text,
+            "used_sources": [],
+        }
 
 
 def build_summary_prompt(document_title, pages_text, summary_type="short"):
