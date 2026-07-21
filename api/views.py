@@ -51,7 +51,17 @@ class ChatAPIView(APIView):
             if not searched_docs:
                 return Response({
                     "answer": "관련 자료를 찾지 못했습니다.",
-                    "sources": []
+                    "sources": [
+                         {
+        "file_name": doc["file_name"],
+        "page": doc["page"],
+        "chunk": doc["chunk"],
+        "document_id": doc["document_id"],
+        "distance": doc.get("distance"),
+        "similarity": doc.get("similarity"),
+    }
+    for doc in searched_docs
+                    ]
                 }, status=200)
             print("\n" + "=" * 50)
             print("[DEBUG] ChromaDB 검색 결과")
@@ -223,7 +233,20 @@ class DocumentUploadAPIView(APIView):
 
         chunks = []
         for page in pages_text:
-            page_chunks = split_text(page["text"])
+            page_chunks = split_text(page["text"]) 
+
+            print("\n" + "=" * 60)
+            print(f"[CHUNK DEBUG] 페이지: {page['page']}")
+            print(f"생성된 chunk 수: {len(page_chunks)}")
+
+            for index, chunk_text in enumerate(page_chunks):
+                print(
+                    f"chunk {index}: "
+                    f"길이={len(chunk_text)}, "
+                    f"앞부분={chunk_text[:100]!r}"
+                )
+
+            print("=" * 60)
 
             for chunk_number, text in enumerate(page_chunks):
                 chunks.append({

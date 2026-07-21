@@ -8,6 +8,12 @@ CHROMA_PATH = "chroma_db"
 COLLECTION_NAME = "documents"
 MODEL_NAME = "all-MiniLM-L6-v2" 
 
+client = chromadb.PersistentClient(path=CHROMA_PATH)
+
+collection = client.get_or_create_collection(
+    name=COLLECTION_NAME
+)
+
 @lru_cache(maxsize=1)
 def get_collection():
     client = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -73,19 +79,34 @@ def search_chroma(query, n_results=8, document_id=None):
     if document_id is not None:
         query_options["where"] = {"document_id": document_id}
 
-    results = get_collection().query(**query_options)
+    results = collection.query(
+    query_texts=[query],
+    n_results=n_results,
+    where={"document_id": int(document_id)} if document_id else None,
+    include=[
+        "documents",
+        "metadatas",
+        "distances"
+    ]
+)
     searched_documents = []
 
-    for text, metadata in zip(
-        results["documents"][0],
-        results["metadatas"][0]
+    documents = results["documents"][0]
+    metadatas = results["metadatas"][0]
+    distances = results["distances"][0]
+
+    for text, metadata, distance in zip(
+        documents,
+        metadatas,
+        distances
     ):
         searched_documents.append({
             "text": text,
-            "file_name": metadata["file_name"],
-            "page": metadata["page"],
-            "chunk": metadata["chunk"],
-            "document_id": metadata["document_id"]
+            "file_name": metadata.get("file_name"),
+            "page": metadata.get("page"),
+            "chunk": metadata.get("chunk"),
+            "document_id": metadata.get("document_id"),
+            "distance": float(distance),
         })
 
     return searched_documents
