@@ -21,7 +21,8 @@ class SummaryRequestSerializer(serializers.Serializer):
 
 
 class ArticleAnalyzeRequestSerializer(serializers.Serializer):
-    url = serializers.URLField(required=True)
+    # URL validation and error classification are handled by article_utils.
+    url = serializers.CharField(required=True)
     summary_type = serializers.ChoiceField(
         choices=["short", "detailed", "keywords"],
         required=False,

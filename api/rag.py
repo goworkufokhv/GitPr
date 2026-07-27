@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 
 from dotenv import load_dotenv
@@ -6,6 +7,7 @@ from openai import OpenAI
 
 
 OPENAI_MODEL = "gpt-4.1-mini"
+logger = logging.getLogger(__name__)
 
 
 def build_prompt(question, searched_docs):
@@ -59,14 +61,11 @@ def call_openai(prompt, parse_json=False):
     api_key = os.getenv("OPENAI_API_KEY")
     client = OpenAI(api_key=api_key)
 
-    # ==============================
-    # GPT에게 전달되는 Prompt 출력
-    # ==============================
-    print("\n" + "=" * 80)
-    print("[DEBUG] GPT에 전달되는 Prompt")
-    print("=" * 80)
-    print(prompt)
-    print("=" * 80 + "\n")
+    logger.debug(
+        "[Article Prompt Preview] chars=%s preview=%r",
+        len(prompt),
+        prompt[:300],
+    )
 
     response = client.responses.create(
         model=OPENAI_MODEL,

@@ -1,3 +1,10 @@
+import logging
+import os
+import time
+from pathlib import PurePosixPath
+
+from django.conf import settings
+from django.db import IntegrityError, transaction
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -9,9 +16,13 @@ from .serializers import (
     ChatRequestSerializer,
     SummaryRequestSerializer,
 )
-from .article_utils import extract_article_text
-from .utils import extract_text_from_pdf, split_text
-from .vector_store import save_chunks_to_chroma
+from .article_utils import (
+    ArticleExtractionError,
+    ArticleParseError,
+    extract_article_text,
+)
+from .utils import calculate_uploaded_file_hash, extract_text_from_pdf, split_text
+from .vector_store import delete_document_from_chroma
 from .rag import (
     build_article_summary_prompt,
     build_prompt,
@@ -19,6 +30,11 @@ from .rag import (
     call_openai,
 )
 from .vector_store import save_chunks_to_chroma, search_chroma
+
+
+logger = logging.getLogger(__name__)
+ARTICLE_ERROR_MESSAGE = "기사가 아니거나 해당 기사의 본문을 추출할 수 없습니다."
+TEST_PARSE_ERROR_URL = "test://parse-error"
 
 
 class TestAPIView(APIView):
@@ -136,18 +152,109 @@ class ChatAPIView(APIView):
 class DocumentListAPIView(APIView):
     def get(self, request):
         documents = Document.objects.all().order_by("-uploaded_at")
+        document_list = []
+
+        for document in documents:
+            try:
+                file_exists = bool(
+                    document.file
+                    and os.path.exists(document.file.path)
+                )
+            except (OSError, ValueError):
+                file_exists = False
+
+            if not file_exists:
+                logger.warning(
+                    "[DocumentListAPIView]\n"
+                    "missing media file:\n"
+                    "document_id=%s\n"
+                    "file=%s",
+                    document.id,
+                    document.file.name if document.file else "",
+                )
+                continue
+
+            file_name = (
+                PurePosixPath(document.file.name).name
+                if document.file
+                else ""
+            )
+            file_url = (
+                request.build_absolute_uri(document.file.url)
+                if document.file
+                else None
+            )
+
+            document_list.append({
+                "id": document.id,
+                "title": document.title,
+                "file_name": file_name,
+                "file_url": file_url,
+                "uploaded_at": document.uploaded_at
+            })
 
         return Response({
-            "documents": [
-                {
-                    "id": document.id,
-                    "title": document.title,
-                    "file_url": document.file.url,
-                    "uploaded_at": document.uploaded_at
-                }
-                for document in documents
-            ]
+            "documents": document_list
         })
+
+
+class DocumentDeleteAPIView(APIView):
+    def delete(self, request, document_id):
+        try:
+            document = Document.objects.get(id=document_id)
+        except Document.DoesNotExist:
+            return Response({
+                "error": "문서를 찾을 수 없습니다."
+            }, status=404)
+
+        try:
+            chroma_result = delete_document_from_chroma(document_id)
+        except Exception:
+            logger.exception(
+                "ChromaDB deletion failed for document_id=%s",
+                document_id,
+            )
+            return Response({
+                "error": "ChromaDB 문서 데이터 삭제에 실패했습니다."
+            }, status=500)
+
+        if chroma_result["remaining_count"] != 0:
+            logger.error(
+                "ChromaDB chunks remain for document_id=%s: %s",
+                document_id,
+                chroma_result["remaining_count"],
+            )
+            return Response({
+                "error": "ChromaDB 문서 데이터 삭제에 실패했습니다."
+            }, status=500)
+
+        if document.file:
+            try:
+                document.file.delete(save=False)
+            except FileNotFoundError:
+                logger.warning(
+                    "Media file already missing for document_id=%s, file=%s",
+                    document_id,
+                    document.file.name,
+                )
+
+        try:
+            with transaction.atomic():
+                document.delete()
+        except Exception:
+            logger.exception(
+                "Database deletion failed for document_id=%s",
+                document_id,
+            )
+            return Response({
+                "error": "문서 삭제 중 오류가 발생했습니다."
+            }, status=500)
+
+        return Response({
+            "message": "문서가 삭제되었습니다.",
+            "document_id": document_id,
+            "deleted_chroma_chunks": chroma_result["deleted_count"],
+        }, status=200)
 
 
 class SummaryAPIView(APIView):
@@ -191,31 +298,90 @@ class SummaryAPIView(APIView):
 class ArticleAnalyzeAPIView(APIView):
     @extend_schema(request=ArticleAnalyzeRequestSerializer, responses={200: None})
     def post(self, request):
+        request_started_at = time.perf_counter()
         serializer = ArticleAnalyzeRequestSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return Response(serializer.errors, status=400)
+            logger.warning("[Article Error] Invalid URL")
+            return Response({
+                "error": ARTICLE_ERROR_MESSAGE
+            }, status=400)
 
-        url = serializer.validated_data["url"]
+        url = serializer.validated_data["url"].strip()
         summary_type = serializer.validated_data["summary_type"]
 
         try:
+            # Development-only hook for verifying parse-error logging.
+            if settings.DEBUG and url == TEST_PARSE_ERROR_URL:
+                raise ArticleParseError(
+                    "Intentional newspaper parse error for testing."
+                )
+
             article = extract_article_text(url)
-        except ValueError as exc:
+        except ArticleParseError:
+            logger.exception("[Article Error] Newspaper Parse Error")
             return Response({
-                "error": str(exc)
+                "error": ARTICLE_ERROR_MESSAGE
+            }, status=400)
+        except ArticleExtractionError:
+            return Response({
+                "error": ARTICLE_ERROR_MESSAGE
+            }, status=400)
+        except Exception:
+            logger.exception("[Article Error] Newspaper Parse Error")
+            return Response({
+                "error": ARTICLE_ERROR_MESSAGE
             }, status=400)
 
+        article_title = article.get("title") or ""
+        article_text = article["text"] or ""
+        safe_title = article_title.replace("\n", " ").strip()
+        logger.info(
+            "[Article Length] summary_type=%s "
+            "title_chars=%s body_chars=%s body_words=%s",
+            summary_type,
+            len(safe_title),
+            len(article_text),
+            len(article_text.split()),
+        )
+
+        article_text_for_prompt = article_text[:12000]
         prompt = build_article_summary_prompt(
-            article["title"],
-            article["text"],
+            article_title,
+            article_text_for_prompt,
             summary_type
         )
+        logger.info(
+            "[Article GPT Request] summary_type=%s input_chars=%s",
+            summary_type,
+            len(prompt),
+        )
+        gpt_started_at = time.perf_counter()
         summary = call_openai(prompt)
+        gpt_elapsed_ms = round(
+            (time.perf_counter() - gpt_started_at) * 1000,
+            2,
+        )
+        logger.info(
+            "[Article GPT Complete] summary_type=%s elapsed_ms=%s",
+            summary_type,
+            gpt_elapsed_ms,
+        )
+        total_elapsed_ms = round(
+            (time.perf_counter() - request_started_at) * 1000,
+            2,
+        )
+        logger.info(
+            "[Article Complete] "
+            "summary_type=%s body_chars=%s total_ms=%s",
+            summary_type,
+            len(article_text),
+            total_elapsed_ms,
+        )
 
         return Response({
             "url": url,
-            "title": article["title"],
+            "title": article_title,
             "summary_type": summary_type,
             "summary": summary
         })
@@ -240,7 +406,11 @@ class DocumentUploadAPIView(APIView):
                 "required": ["file"],
             }
         },
-        responses={201: None}
+        responses={
+            201: None,
+            400: None,
+            409: None,
+        }
     )
     def post(self, request):
         title = request.data.get("title")
@@ -256,13 +426,74 @@ class DocumentUploadAPIView(APIView):
                 "error": "PDF 파일만 업로드할 수 있습니다."
             }, status=400)
 
+        file_hash = calculate_uploaded_file_hash(uploaded_file)
+        existing_document = Document.objects.filter(
+            file_hash=file_hash
+        ).first()
+
+        if existing_document:
+            logger.warning(
+                "[Upload Duplicate] document_id=%s file_name=%s file_hash=%s",
+                existing_document.id,
+                uploaded_file.name,
+                file_hash,
+            )
+            return Response({
+                "error": "이미 있는 파일입니다.",
+                "document": {
+                    "id": existing_document.id,
+                    "title": existing_document.title,
+                },
+            }, status=409)
+
         if not title:
             title = uploaded_file.name
 
-        document = Document.objects.create(
+        document = Document(
             title=title,
-            file=uploaded_file
+            file=uploaded_file,
+            file_hash=file_hash,
         )
+
+        try:
+            with transaction.atomic():
+                document.save(force_insert=True)
+        except IntegrityError:
+            # A concurrent request can store a file before losing the unique
+            # hash race. Remove only the file stored by this request.
+            if document.file and document.file.name:
+                try:
+                    document.file.delete(save=False)
+                except Exception:
+                    logger.exception(
+                        "Failed to clean up duplicate upload file=%s",
+                        document.file.name,
+                    )
+
+            existing_document = Document.objects.filter(
+                file_hash=file_hash
+            ).first()
+            logger.warning(
+                "[Upload Duplicate] document_id=%s file_name=%s file_hash=%s",
+                existing_document.id if existing_document else None,
+                uploaded_file.name,
+                file_hash,
+            )
+            return Response({
+                "error": "이미 있는 파일입니다.",
+                "document": {
+                    "id": (
+                        existing_document.id
+                        if existing_document
+                        else None
+                    ),
+                    "title": (
+                        existing_document.title
+                        if existing_document
+                        else None
+                    ),
+                },
+            }, status=409)
 
         pages_text = extract_text_from_pdf(document.file.path)
 

@@ -1,4 +1,5 @@
 from functools import lru_cache
+import logging
 from numbers import Real
 import re
 
@@ -14,6 +15,8 @@ FINAL_CONTEXT_K = 5
 MAX_DISTANCE = 1.25
 MIN_CHUNK_TEXT_LENGTH = 50
 MIN_CHUNK_WORD_COUNT = 5
+
+logger = logging.getLogger(__name__)
 
 SQL_KEYWORDS = (
     "CREATE",
@@ -38,8 +41,7 @@ collection = client.get_or_create_collection(
 
 @lru_cache(maxsize=1)
 def get_collection():
-    client = chromadb.PersistentClient(path=CHROMA_PATH)
-    return client.get_or_create_collection(name=COLLECTION_NAME)
+    return collection
 
 
 @lru_cache(maxsize=1)
@@ -147,6 +149,72 @@ def save_chunks_to_chroma(document_id, file_name, chunks):
     )
 
     return len(documents)
+
+
+def delete_document_from_chroma(document_id):
+    target_document_id = int(document_id)
+    chroma_collection = get_collection()
+
+    before = chroma_collection.get(
+        where={"document_id": target_document_id},
+        include=["metadatas"],
+    )
+    before_count = len(before.get("ids", []))
+
+    if before_count:
+        chroma_collection.delete(
+            where={"document_id": target_document_id}
+        )
+
+    after = chroma_collection.get(
+        where={"document_id": target_document_id},
+        include=["metadatas"],
+    )
+    remaining_count = len(after.get("ids", []))
+
+    logger.info(
+        "[Chroma Delete]\n"
+        "document_id=%s\n"
+        "before_count=%s\n"
+        "remaining_count=%s",
+        target_document_id,
+        before_count,
+        remaining_count,
+    )
+
+    if remaining_count != 0:
+        raise RuntimeError(
+            "ChromaDB document deletion failed: "
+            f"document_id={target_document_id}, "
+            f"remaining_count={remaining_count}"
+        )
+
+    return {
+        "document_id": target_document_id,
+        "deleted_count": before_count,
+        "remaining_count": remaining_count,
+    }
+
+
+def get_all_chroma_document_ids():
+    chroma_collection = get_collection()
+    chroma_data = chroma_collection.get(include=["metadatas"])
+    document_ids = set()
+
+    for metadata in chroma_data.get("metadatas", []):
+        if not metadata or metadata.get("document_id") is None:
+            continue
+
+        raw_document_id = metadata["document_id"]
+        try:
+            document_ids.add(int(raw_document_id))
+        except (TypeError, ValueError):
+            logger.warning(
+                "Skipping invalid ChromaDB document_id metadata: %r",
+                raw_document_id,
+            )
+
+    return document_ids
 
 
 def search_chroma(query, n_results=8, document_id=None):

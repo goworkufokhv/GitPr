@@ -1,4 +1,17 @@
+import hashlib
+
 from pypdf import PdfReader
+
+
+def calculate_uploaded_file_hash(uploaded_file):
+    sha256 = hashlib.sha256()
+
+    for chunk in uploaded_file.chunks():
+        sha256.update(chunk)
+
+    uploaded_file.seek(0)
+    return sha256.hexdigest()
+
 
 def extract_text_from_pdf(file_path):
     reader=PdfReader(file_path)
