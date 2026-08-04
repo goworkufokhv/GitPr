@@ -28,6 +28,7 @@ from .rag import (
     build_prompt,
     build_summary_prompt,
     call_openai,
+    parse_article_detailed_summary,
 )
 from .vector_store import save_chunks_to_chroma, search_chroma
 
@@ -203,6 +204,11 @@ class DocumentDeleteAPIView(APIView):
         try:
             document = Document.objects.get(id=document_id)
         except Document.DoesNotExist:
+            logger.warning(
+                "[Document Delete] stage=database_lookup status=failed "
+                "document_id=%s reason=not_found",
+                document_id,
+            )
             return Response({
                 "error": "문서를 찾을 수 없습니다."
             }, status=404)
@@ -211,7 +217,7 @@ class DocumentDeleteAPIView(APIView):
             chroma_result = delete_document_from_chroma(document_id)
         except Exception:
             logger.exception(
-                "ChromaDB deletion failed for document_id=%s",
+                "[Document Delete] stage=chroma status=failed document_id=%s",
                 document_id,
             )
             return Response({
@@ -220,7 +226,8 @@ class DocumentDeleteAPIView(APIView):
 
         if chroma_result["remaining_count"] != 0:
             logger.error(
-                "ChromaDB chunks remain for document_id=%s: %s",
+                "[Document Delete] stage=chroma status=failed "
+                "document_id=%s remaining_count=%s",
                 document_id,
                 chroma_result["remaining_count"],
             )
@@ -228,27 +235,75 @@ class DocumentDeleteAPIView(APIView):
                 "error": "ChromaDB 문서 데이터 삭제에 실패했습니다."
             }, status=500)
 
+        logger.info(
+            "[Document Delete] stage=chroma status=success "
+            "document_id=%s deleted_count=%s",
+            document_id,
+            chroma_result["deleted_count"],
+        )
+
         if document.file:
+            file_name = document.file.name
+            storage = document.file.storage
             try:
-                document.file.delete(save=False)
-            except FileNotFoundError:
-                logger.warning(
-                    "Media file already missing for document_id=%s, file=%s",
+                if storage.exists(file_name):
+                    document.file.delete(save=False)
+                    if storage.exists(file_name):
+                        raise RuntimeError("Media file remains after deletion")
+                    logger.info(
+                        "[Document Delete] stage=media status=success "
+                        "document_id=%s file=%s",
+                        document_id,
+                        file_name,
+                    )
+                else:
+                    logger.warning(
+                        "[Document Delete] stage=media status=already_missing "
+                        "document_id=%s file=%s",
+                        document_id,
+                        file_name,
+                    )
+            except Exception:
+                logger.exception(
+                    "[Document Delete] stage=media status=failed "
+                    "document_id=%s file=%s",
                     document_id,
-                    document.file.name,
+                    file_name,
                 )
+                return Response({
+                    "error": "PDF 파일 삭제에 실패했습니다."
+                }, status=500)
+        else:
+            logger.info(
+                "[Document Delete] stage=media status=already_missing "
+                "document_id=%s file=",
+                document_id,
+            )
 
         try:
             with transaction.atomic():
                 document.delete()
+                if Document.objects.filter(id=document_id).exists():
+                    raise RuntimeError("Database record remains after deletion")
         except Exception:
             logger.exception(
-                "Database deletion failed for document_id=%s",
+                "[Document Delete] stage=database status=failed document_id=%s",
                 document_id,
             )
             return Response({
                 "error": "문서 삭제 중 오류가 발생했습니다."
             }, status=500)
+
+        logger.info(
+            "[Document Delete] stage=database status=success document_id=%s",
+            document_id,
+        )
+        logger.info(
+            "[Document Delete] status=completed document_id=%s "
+            "deleted_chroma_chunks=%s",
+            document_id,
+            chroma_result["deleted_count"],
+        )
 
         return Response({
             "message": "문서가 삭제되었습니다.",
@@ -358,6 +413,8 @@ class ArticleAnalyzeAPIView(APIView):
         )
         gpt_started_at = time.perf_counter()
         summary = call_openai(prompt)
+        if summary_type == "detailed":
+            summary = parse_article_detailed_summary(summary)
         gpt_elapsed_ms = round(
             (time.perf_counter() - gpt_started_at) * 1000,
             2,

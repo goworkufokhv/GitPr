@@ -14,6 +14,8 @@ venv_linux/
 # OpenAI API Key
 # ==========================
 .env
+.env.*
+!.env.example
 
 # ==========================
 # Django

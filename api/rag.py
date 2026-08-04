@@ -1,8 +1,7 @@
 import json
 import logging
-import os
 
-from dotenv import load_dotenv
+from django.conf import settings
 from openai import OpenAI
 
 
@@ -57,15 +56,7 @@ def build_prompt(question, searched_docs):
 
 
 def call_openai(prompt, parse_json=False):
-    load_dotenv()
-    api_key = os.getenv("OPENAI_API_KEY")
-    client = OpenAI(api_key=api_key)
-
-    logger.debug(
-        "[Article Prompt Preview] chars=%s preview=%r",
-        len(prompt),
-        prompt[:300],
-    )
+    client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
     response = client.responses.create(
         model=OPENAI_MODEL,
@@ -119,6 +110,45 @@ def call_openai(prompt, parse_json=False):
         }
 
 
+def parse_article_detailed_summary(raw_summary):
+    """Parse detailed-summary JSON and preserve raw text on any mismatch."""
+    if not isinstance(raw_summary, str):
+        return raw_summary
+
+    json_text = raw_summary.strip()
+    if json_text.startswith("```json"):
+        json_text = json_text[len("```json"):]
+    elif json_text.startswith("```"):
+        json_text = json_text[len("```"):]
+    if json_text.rstrip().endswith("```"):
+        json_text = json_text.rstrip()[:-3]
+
+    try:
+        result = json.loads(json_text.strip())
+        if not isinstance(result, dict):
+            raise ValueError("Detailed summary must be an object")
+        if not all(isinstance(result.get(key), str) for key in (
+            "title", "introduction", "conclusion"
+        )):
+            raise ValueError("Detailed summary text fields are invalid")
+        sections = result.get("sections")
+        if not isinstance(sections, list):
+            raise ValueError("Detailed summary sections are invalid")
+        for section in sections:
+            if not isinstance(section, dict):
+                raise ValueError("Detailed summary section is invalid")
+            if not isinstance(section.get("heading"), str):
+                raise ValueError("Detailed summary heading is invalid")
+            items = section.get("items")
+            if not isinstance(items, list) or not all(
+                isinstance(item, str) for item in items
+            ):
+                raise ValueError("Detailed summary items are invalid")
+        return result
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return raw_summary
+
+
 def build_summary_prompt(document_title, pages_text, summary_type="short"):
     context = ""
 
@@ -156,6 +186,32 @@ def build_summary_prompt(document_title, pages_text, summary_type="short"):
 
 def build_article_summary_prompt(article_title, article_text, summary_type="short"):
     context = article_text[:12000]
+
+    if summary_type == "detailed":
+        return f"""
+다음 기사를 읽고 상세 요약을 작성하세요.
+
+기사 제목
+---------------
+{article_title}
+
+기사 내용
+---------------
+{context}
+
+요청
+---------------
+반드시 아래 구조의 유효한 JSON 객체만 출력하세요. 마크다운 코드 블록이나 설명은 출력하지 마세요.
+{{
+  "title": "기사 제목",
+  "introduction": "전체 개요",
+  "sections": [
+    {{"heading": "상위 묶음 제목", "items": ["세부 항목 1", "세부 항목 2"]}}
+  ],
+  "conclusion": "결론"
+}}
+상위 묶음 번호는 문자열에 직접 넣지 마세요. sections 배열의 순서가 표시 순서입니다.
+"""
 
     if summary_type == "detailed":
         instruction = "기사 내용을 자세하게 요약해 주세요."

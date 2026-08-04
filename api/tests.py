@@ -17,6 +17,7 @@ from .article_utils import (
     extract_article_text,
 )
 from .models import Document
+from .rag import parse_article_detailed_summary
 from .vector_store import (
     delete_document_from_chroma,
     get_all_chroma_document_ids,
@@ -174,6 +175,41 @@ class ArticleAnalyzeApiTests(TestCase):
             combined_logs,
         )
         self.assertNotIn("a" * 12001, prompt)
+
+    @patch("api.views.call_openai")
+    @patch("api.views.extract_article_text")
+    def test_detailed_summary_returns_parsed_json(self, mock_extract, mock_openai):
+        mock_extract.return_value = {"title": "Article", "text": "Body"}
+        mock_openai.return_value = '''```json
+{"title":"Article","introduction":"Intro","sections":[{"heading":"First","items":["One"]},{"heading":"Second","items":["Two"]}],"conclusion":"End"}
+```'''
+
+        response = self.client.post(
+            "/api/articles/analyze/",
+            {"url": "https://example.com/article", "summary_type": "detailed"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["summary"]["sections"][1]["heading"], "Second")
+
+    @patch("api.views.call_openai", return_value="legacy detailed summary")
+    @patch("api.views.extract_article_text", return_value={"title": "Article", "text": "Body"})
+    def test_detailed_summary_falls_back_to_raw_text(self, mock_extract, mock_openai):
+        response = self.client.post(
+            "/api/articles/analyze/",
+            {"url": "https://example.com/article", "summary_type": "detailed"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["summary"], "legacy detailed summary")
+
+
+class DetailedArticleSummaryParserTests(TestCase):
+    def test_invalid_shape_falls_back_to_original_string(self):
+        raw = '{"title": "Article", "sections": "invalid"}'
+        self.assertEqual(parse_article_detailed_summary(raw), raw)
 
 
 class FakeChromaCollection:

@@ -1,0 +1,12 @@
+.env
+.git
+.gitignore
+__pycache__/
+*.py[cod]
+*.sqlite3
+chroma_db/
+media/
+venv/
+venv_linux/
+.pytest_cache/
+.mypy_cache/
